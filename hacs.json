@@ -1,0 +1,8 @@
+{
+  "name": "Ninebot Scooter",
+  "content_in_root": false,
+  "render_readme": true,
+  "zip_release": true,
+  "filename": "ninebot.zip",
+  "homeassistant": "2026.8.0"
+}
