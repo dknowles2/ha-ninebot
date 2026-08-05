@@ -24,6 +24,9 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
+      # uv sync only searches for an interpreter under setup-uv's
+      # environment; this installs the newest one matching requires-python.
+      - run: uv python install
       - run: uv sync --group dev --frozen
       - name: ruff check
         run: uv run ruff check --output-format=github .
@@ -40,6 +43,9 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
+      # uv sync only searches for an interpreter under setup-uv's
+      # environment; this installs the newest one matching requires-python.
+      - run: uv python install
       - run: uv sync --group dev --frozen
       - run: uv run mypy custom_components/ninebot
 
@@ -53,6 +59,9 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
+      # uv sync only searches for an interpreter under setup-uv's
+      # environment; this installs the newest one matching requires-python.
+      - run: uv python install
       - run: uv sync --group dev --frozen
       - run: uv run pytest --cov-report=xml
       - uses: actions/upload-artifact@v4
