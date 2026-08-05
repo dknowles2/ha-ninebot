@@ -1,0 +1,33 @@
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+
+categories:
+  - title: "Breaking changes"
+    labels: ["breaking"]
+  - title: "Features"
+    labels: ["feature", "enhancement"]
+  - title: "Bug fixes"
+    labels: ["fix", "bug"]
+  - title: "Protocol and register map"
+    labels: ["protocol"]
+  - title: "Maintenance"
+    labels: ["chore", "dependencies", "documentation"]
+
+change-template: "- $TITLE (#$NUMBER) @$AUTHOR"
+no-changes-template: "- No changes"
+
+version-resolver:
+  major:
+    labels: ["breaking"]
+  minor:
+    labels: ["feature", "enhancement"]
+  patch:
+    labels: ["fix", "bug", "chore", "dependencies", "documentation", "protocol"]
+  default: patch
+
+template: |
+  ## What's changed
+
+  $CHANGES
+
+  **Full changelog**: https://github.com/dknowles2/ha-ninebot/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
