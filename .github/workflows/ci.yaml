@@ -77,3 +77,9 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
+          # brands: requires the domain to be registered in
+          #   home-assistant/brands, which only applies to integrations
+          #   submitted to Home Assistant core.
+          # topics, description: repository metadata rather than anything in
+          #   this tree. Drop these two from the list once they are set.
+          ignore: "brands topics description"
