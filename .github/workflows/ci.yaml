@@ -11,19 +11,23 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  UV_VERSION: "0.9.7"
+  UV_VERSION: "0.12.1"
 
 jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v7
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
-      - run: uv sync --group dev
+      # uv sync only searches for an interpreter under setup-uv's
+      # environment; this installs the newest one matching requires-python.
+      - run: uv python install
+      - run: uv sync --group dev --frozen
       - name: ruff check
         run: uv run ruff check --output-format=github .
       - name: ruff format
@@ -32,25 +36,33 @@ jobs:
   typecheck:
     name: Type check
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v7
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
-      - run: uv sync --group dev
+      # uv sync only searches for an interpreter under setup-uv's
+      # environment; this installs the newest one matching requires-python.
+      - run: uv python install
+      - run: uv sync --group dev --frozen
       - run: uv run mypy custom_components/ninebot
 
   test:
     name: Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v7
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
-      - run: uv sync --group dev
+      # uv sync only searches for an interpreter under setup-uv's
+      # environment; this installs the newest one matching requires-python.
+      - run: uv python install
+      - run: uv sync --group dev --frozen
       - run: uv run pytest --cov-report=xml
       - uses: actions/upload-artifact@v7
         if: always()
