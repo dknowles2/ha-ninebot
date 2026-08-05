@@ -1,0 +1,25 @@
+{
+  "entity": {
+    "sensor": {
+      "battery_cycles": { "default": "mdi:battery-sync" },
+      "battery_deep_discharges": { "default": "mdi:battery-alert-variant" },
+      "battery_design_capacity": { "default": "mdi:battery-heart-variant" },
+      "battery_remaining_capacity": { "default": "mdi:battery-medium" },
+      "body_temperature": { "default": "mdi:thermometer" },
+      "cell_voltage_delta": { "default": "mdi:sine-wave" },
+      "cell_voltage_max": { "default": "mdi:flash" },
+      "cell_voltage_min": { "default": "mdi:flash-outline" },
+      "error_code": { "default": "mdi:alert-circle-outline" },
+      "gear_mode": { "default": "mdi:speedometer-medium" },
+      "light_mode": { "default": "mdi:car-light-high" },
+      "max_power": { "default": "mdi:lightning-bolt" },
+      "remaining_range": { "default": "mdi:map-marker-distance" },
+      "speed": { "default": "mdi:speedometer" },
+      "total_distance": { "default": "mdi:counter" },
+      "traction_control": { "default": "mdi:car-traction-control" },
+      "trip_distance": { "default": "mdi:map-marker-path" },
+      "uptime": { "default": "mdi:timer-outline" },
+      "warning_code": { "default": "mdi:alert-outline" }
+    }
+  }
+}

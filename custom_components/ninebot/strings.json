@@ -1,0 +1,115 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "confirm": {
+        "description": "Do you want to set up {name}?\n\nThe scooter must be powered on. The first connection asks you to press its power button to confirm pairing."
+      },
+      "user": {
+        "data": {
+          "address": "Device"
+        },
+        "data_description": {
+          "address": "Ninebot scooters currently advertising nearby. The scooter must be powered on to appear."
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
+      "no_devices_found": "No Ninebot scooters found. Make sure the scooter is powered on and within range of a Bluetooth adapter or proxy.",
+      "not_supported": "This device is not a supported Ninebot scooter."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "poll_interval": "Poll interval"
+        },
+        "data_description": {
+          "poll_interval": "How often to connect to the scooter and read its registers. Each poll wakes the Bluetooth module, so longer intervals are gentler on the battery."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "device_not_found": {
+      "message": "Could not find a Ninebot scooter at {address}. It may be out of range, powered off, or need a Bluetooth proxy nearby."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "locked": {
+        "name": "Lock"
+      }
+    },
+    "sensor": {
+      "battery_cycles": {
+        "name": "Battery charge cycles"
+      },
+      "battery_deep_discharges": {
+        "name": "Battery deep discharges"
+      },
+      "battery_design_capacity": {
+        "name": "Battery design capacity"
+      },
+      "battery_percent": {
+        "name": "Battery level (controller)"
+      },
+      "battery_remaining_capacity": {
+        "name": "Battery remaining capacity"
+      },
+      "battery_temperature_1": {
+        "name": "Battery temperature 1"
+      },
+      "battery_temperature_2": {
+        "name": "Battery temperature 2"
+      },
+      "body_temperature": {
+        "name": "Body temperature"
+      },
+      "cell_voltage_delta": {
+        "name": "Cell voltage delta"
+      },
+      "cell_voltage_max": {
+        "name": "Cell voltage maximum"
+      },
+      "cell_voltage_min": {
+        "name": "Cell voltage minimum"
+      },
+      "error_code": {
+        "name": "Error code"
+      },
+      "gear_mode": {
+        "name": "Gear mode"
+      },
+      "light_mode": {
+        "name": "Light mode"
+      },
+      "max_power": {
+        "name": "Maximum power"
+      },
+      "remaining_range": {
+        "name": "Remaining range"
+      },
+      "speed": {
+        "name": "Speed"
+      },
+      "total_distance": {
+        "name": "Total distance"
+      },
+      "traction_control": {
+        "name": "Traction control"
+      },
+      "trip_distance": {
+        "name": "Trip distance"
+      },
+      "uptime": {
+        "name": "Uptime"
+      },
+      "warning_code": {
+        "name": "Warning code"
+      }
+    }
+  }
+}
