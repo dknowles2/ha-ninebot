@@ -12,7 +12,6 @@ concurrency:
 
 env:
   UV_VERSION: "0.9.7"
-  PYTHON_VERSION: "3.14"
 
 jobs:
   lint:
@@ -23,7 +22,6 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           version: ${{ env.UV_VERSION }}
-          python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
       - run: uv sync --group dev
       - name: ruff check
@@ -39,7 +37,6 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           version: ${{ env.UV_VERSION }}
-          python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
       - run: uv sync --group dev
       - run: uv run mypy custom_components/ninebot
@@ -52,7 +49,6 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           version: ${{ env.UV_VERSION }}
-          python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
       - run: uv sync --group dev
       - run: uv run pytest --cov-report=xml
