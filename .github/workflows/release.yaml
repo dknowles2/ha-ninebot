@@ -1,0 +1,96 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish release asset
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Derive version from tag
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp manifest and pyproject with the release version
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import re
+
+          version = os.environ["VERSION"]
+
+          manifest = pathlib.Path("custom_components/ninebot/manifest.json")
+          data = json.loads(manifest.read_text())
+          data["version"] = version
+          manifest.write_text(json.dumps(data, indent=2) + "\n")
+
+          pyproject = pathlib.Path("pyproject.toml")
+          pyproject.write_text(
+              re.sub(
+                  r'^version = ".*"$',
+                  f'version = "{version}"',
+                  pyproject.read_text(),
+                  count=1,
+                  flags=re.MULTILINE,
+              )
+          )
+          PY
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+
+      - name: Build release archive
+        run: |
+          cd custom_components/ninebot
+          zip -r ../../ninebot.zip . -x '*.pyc' -x '__pycache__/*' -x '*/__pycache__/*'
+
+      - name: Attach archive to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ninebot.zip
+
+      - name: Commit the stamped version back to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout main
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import re
+
+          version = os.environ["VERSION"]
+
+          manifest = pathlib.Path("custom_components/ninebot/manifest.json")
+          data = json.loads(manifest.read_text())
+          data["version"] = version
+          manifest.write_text(json.dumps(data, indent=2) + "\n")
+
+          pyproject = pathlib.Path("pyproject.toml")
+          pyproject.write_text(
+              re.sub(
+                  r'^version = ".*"$',
+                  f'version = "{version}"',
+                  pyproject.read_text(),
+                  count=1,
+                  flags=re.MULTILINE,
+              )
+          )
+          PY
+          git add custom_components/ninebot/manifest.json pyproject.toml
+          git diff --cached --quiet || git commit -m "chore: release ${VERSION}"
+          git push origin main
+        env:
+          VERSION: ${{ steps.version.outputs.version }}

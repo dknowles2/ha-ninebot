@@ -1,0 +1,117 @@
+[project]
+name = "ha-ninebot"
+version = "0.1.0"
+description = "Home Assistant integration for Segway-Ninebot scooters over Bluetooth LE"
+readme = "README.md"
+requires-python = ">=3.14.2"
+license = "Apache-2.0"
+authors = [{ name = "David Knowles" }]
+
+[tool.uv]
+# This repository ships a Home Assistant custom component, not a Python
+# distribution, so there is nothing to build or install.
+package = false
+
+[dependency-groups]
+dev = [
+  "pytest-homeassistant-custom-component==0.13.353",
+  "pytest-asyncio",
+  "pytest-cov",
+  "mypy",
+  "ruff",
+  # Runtime requirement of the integration itself.
+  "miauth==0.9.7",
+  # Home Assistant does not install integration requirements during tests, so
+  # the bluetooth stack the tests import has to be pulled in explicitly. These
+  # mirror the requirements of homeassistant.components.bluetooth and usb.
+  "aiousbwatcher==1.1.2",
+  "bleak==3.0.2",
+  "bleak-retry-connector==4.6.3",
+  "bluetooth-adapters==2.4.0",
+  "bluetooth-auto-recovery==1.6.4",
+  "bluetooth-data-tools==1.29.18",
+  "dbus-fast==5.0.22",
+  "habluetooth==6.26.5",
+  "serialx==1.8.2",
+]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+  "A",     # builtins shadowing
+  "ASYNC", # async pitfalls
+  "B",     # bugbear
+  "C4",    # comprehensions
+  "D",     # pydocstyle
+  "E",     # pycodestyle errors
+  "F",     # pyflakes
+  "I",     # import sorting
+  "ICN",   # import conventions
+  "N",     # pep8-naming
+  "PGH",   # pygrep hooks
+  "PL",    # pylint
+  "PTH",   # pathlib
+  "RET",   # return
+  "RUF",   # ruff specific
+  "SIM",   # simplify
+  "SLF",   # private member access
+  "T20",   # no print
+  "TRY",   # exception antipatterns
+  "UP",    # pyupgrade
+  "W",     # pycodestyle warnings
+]
+ignore = [
+  "D203",    # incompatible with D211
+  "D213",    # incompatible with D212
+  "TRY003",  # long messages outside exception class are fine here
+  "PLR0913", # BLE clients legitimately take several arguments
+  # The BLE request helpers take a per-request timeout because the scooter
+  # answers some registers far slower than others; asyncio.timeout is used
+  # internally to enforce it.
+  "ASYNC109",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D100", "D103", "SLF001", "PLR2004"]
+# The probe is a console tool; printing is its whole job.
+"scripts/*" = ["T201"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
+
+[tool.ruff.lint.isort]
+known-first-party = ["custom_components"]
+force-sort-within-sections = true
+combine-as-imports = true
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+warn_unreachable = true
+show_error_codes = true
+disallow_untyped_defs = true
+follow_imports = "silent"
+
+[[tool.mypy.overrides]]
+# miauth ships no type information.
+module = ["miauth.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+addopts = "--cov=custom_components.ninebot --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["custom_components/ninebot"]
+
+[tool.coverage.report]
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError"]
