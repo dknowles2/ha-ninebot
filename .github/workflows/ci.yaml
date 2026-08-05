@@ -17,13 +17,17 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v7
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
-      - run: uv sync --group dev
+      - name: Install Python
+        run: uv python install
+      - name: Sync dependencies
+        run: uv sync --group dev --frozen --no-progress --verbose
       - name: ruff check
         run: uv run ruff check --output-format=github .
       - name: ruff format
@@ -32,25 +36,33 @@ jobs:
   typecheck:
     name: Type check
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v7
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
-      - run: uv sync --group dev
+      - name: Install Python
+        run: uv python install
+      - name: Sync dependencies
+        run: uv sync --group dev --frozen --no-progress --verbose
       - run: uv run mypy custom_components/ninebot
 
   test:
     name: Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v7
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
-      - run: uv sync --group dev
+      - name: Install Python
+        run: uv python install
+      - name: Sync dependencies
+        run: uv sync --group dev --frozen --no-progress --verbose
       - run: uv run pytest --cov-report=xml
       - uses: actions/upload-artifact@v4
         if: always()
