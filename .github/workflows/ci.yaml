@@ -24,10 +24,7 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
-      - name: Install Python
-        run: uv python install
-      - name: Sync dependencies
-        run: uv sync --group dev --frozen --no-progress --verbose
+      - run: uv sync --group dev --frozen
       - name: ruff check
         run: uv run ruff check --output-format=github .
       - name: ruff format
@@ -43,10 +40,7 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
-      - name: Install Python
-        run: uv python install
-      - name: Sync dependencies
-        run: uv sync --group dev --frozen --no-progress --verbose
+      - run: uv sync --group dev --frozen
       - run: uv run mypy custom_components/ninebot
 
   test:
@@ -59,10 +53,7 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
-      - name: Install Python
-        run: uv python install
-      - name: Sync dependencies
-        run: uv sync --group dev --frozen --no-progress --verbose
+      - run: uv sync --group dev --frozen
       - run: uv run pytest --cov-report=xml
       - uses: actions/upload-artifact@v4
         if: always()
