@@ -53,6 +53,9 @@ DEFAULT_CHUNK_SIZE = 20
 PAIRING_RETRY_INTERVAL = 1.0
 """How often to re-send the pairing request while waiting for a button press."""
 
+PRE_COMM_PROBE_TIMEOUT = 2.0
+"""Per-attempt wait while working out which board answers the handshake."""
+
 MAX_CONSECUTIVE_TIMEOUTS = 3
 """Abort a poll after this many registers in a row fail to answer."""
 
@@ -100,6 +103,7 @@ class NinebotClient:
         self._password_was_supplied = password is not None
         self._auth_param = bytes(PASSWORD_LENGTH)
         self._serial = b""
+        self._handshake_target = DeviceId.BLE_BOARD
 
         self._crypto = Encryption2()
         self._client: BleakClient | None = None
@@ -216,14 +220,44 @@ class NinebotClient:
 
         await self._verify_session()
 
+    async def _pre_comm_request(self) -> Packet:
+        """Send PRE_COMM, trying each board address the vehicle might answer on.
+
+        The specification addresses the Bluetooth board as 0x04, and that is
+        tried first. An E2 Pro has been observed answering on 0x21 as well, so
+        rather than guessing which a given model prefers, both are attempted
+        and the one that replies is kept for the rest of the handshake.
+
+        Retrying is safe here because PRE_COMM runs before counter mode, so a
+        dropped attempt leaves no sequence number behind.
+        """
+        errors: list[str] = []
+        for target in (DeviceId.BLE_BOARD, DeviceId.BLE):
+            try:
+                response = await self._request(
+                    Packet(DeviceId.PHONE, target, Command.PRE_COMM, 0),
+                    timeout=PRE_COMM_PROBE_TIMEOUT,
+                )
+            except NinebotTimeoutError as err:
+                _LOGGER.debug(
+                    "%s: no PRE_COMM reply on board 0x%02X", self._name, target
+                )
+                errors.append(f"0x{target:02X}: {err}")
+                continue
+            self._handshake_target = target
+            _LOGGER.debug("%s: handshake board is 0x%02X", self._name, target)
+            return response
+
+        raise NinebotTimeoutError(
+            "No PRE_COMM response from any board address (" + "; ".join(errors) + ")"
+        )
+
     async def _pre_comm(self) -> None:
         """Fetch the auth parameter and serial number, then enter counter mode."""
         self._crypto.reset_sn()
         self._crypto.set_key(self._name.encode(), FW_DATA)
 
-        response = await self._request(
-            Packet(DeviceId.PHONE, DeviceId.BLE_BOARD, Command.PRE_COMM, 0)
-        )
+        response = await self._pre_comm_request()
         if len(response.data) < PASSWORD_LENGTH + SERIAL_LENGTH:
             raise NinebotAuthError(
                 f"PRE_COMM response too short: {len(response.data)} bytes"
@@ -267,7 +301,7 @@ class NinebotClient:
                 response = await self._request(
                     Packet(
                         DeviceId.PHONE,
-                        DeviceId.BLE_BOARD,
+                        self._handshake_target,
                         Command.SET_PWD,
                         0,
                         password,
@@ -294,7 +328,7 @@ class NinebotClient:
         response = await self._request(
             Packet(
                 DeviceId.PHONE,
-                DeviceId.BLE_BOARD,
+                self._handshake_target,
                 Command.AUTH,
                 0,
                 self._serial,

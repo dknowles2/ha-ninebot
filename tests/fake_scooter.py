@@ -115,6 +115,7 @@ class FakeScooter:
         require_button_press: bool = False,
         chunk_size: int = 20,
         supports_bulk_reads: bool = True,
+        handshake_board: DeviceId = DeviceId.BLE_BOARD,
     ) -> None:
         """Configure the fake scooter's behaviour."""
         self.name = name
@@ -122,6 +123,7 @@ class FakeScooter:
         self.require_button_press = require_button_press
         self.chunk_size = chunk_size
         self.supports_bulk_reads = supports_bulk_reads
+        self.handshake_board = handshake_board
         self.registers = dict(DEFAULT_REGISTERS)
         self.unreadable: set[tuple[int, int]] = set()
 
@@ -173,10 +175,13 @@ class FakeScooter:
         self.requests.append(request)
 
         if request.command is Command.PRE_COMM:
+            if request.target is not self.handshake_board:
+                # A board this vehicle does not use simply never answers.
+                return
             # The index tells the client whether a password is already stored.
             self._respond(
                 Packet(
-                    DeviceId.BLE_BOARD,
+                    self.handshake_board,
                     DeviceId.PHONE,
                     Command.PRE_COMM,
                     int(self.paired_password is not None),
@@ -195,12 +200,12 @@ class FakeScooter:
             self.pair_attempts += 1
             if self.require_button_press:
                 self._respond(
-                    Packet(DeviceId.BLE_BOARD, DeviceId.PHONE, Command.SET_PWD, 0)
+                    Packet(self.handshake_board, DeviceId.PHONE, Command.SET_PWD, 0)
                 )
                 return
             self.paired_password = request.data[:PASSWORD_LENGTH]
             self._respond(
-                Packet(DeviceId.BLE_BOARD, DeviceId.PHONE, Command.SET_PWD, 1)
+                Packet(self.handshake_board, DeviceId.PHONE, Command.SET_PWD, 1)
             )
             self._crypto.set_key(self.paired_password, AUTH_PARAM)
             return
@@ -208,7 +213,9 @@ class FakeScooter:
         if request.command is Command.AUTH:
             accepted = request.data[: len(SERIAL_CHALLENGE)] == SERIAL_CHALLENGE
             self._respond(
-                Packet(DeviceId.BLE_BOARD, DeviceId.PHONE, Command.AUTH, int(accepted))
+                Packet(
+                    self.handshake_board, DeviceId.PHONE, Command.AUTH, int(accepted)
+                )
             )
             return
 

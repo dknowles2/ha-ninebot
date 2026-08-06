@@ -8,8 +8,9 @@ from custom_components.ninebot.pynebot.client import NinebotClient
 from custom_components.ninebot.pynebot.exceptions import (
     NinebotConnectionError,
     NinebotPairingRequiredError,
+    NinebotTimeoutError,
 )
-from custom_components.ninebot.pynebot.protocol import Command
+from custom_components.ninebot.pynebot.protocol import Command, DeviceId
 
 from .conftest import SCOOTER_ADDRESS, SCOOTER_NAME
 from .fake_scooter import FakeScooter, make_ble_device, patch_transport
@@ -164,3 +165,23 @@ async def test_build_info_summarizes_static_values(transport: FakeScooter) -> No
     assert info.model == "eKickScooter E2 Pro"
     assert info.serial_number == "N2GX2318000216"
     assert info.controller_firmware == "2.1.3"
+
+
+async def test_handshake_falls_back_to_the_other_board(scooter: FakeScooter) -> None:
+    """Some vehicles answer the handshake on 0x21 rather than the documented 0x04."""
+    scooter.handshake_board = DeviceId.BLE
+    with patch_transport(scooter):
+        client = _client()
+        await client.connect()
+        state = await client.async_poll(include_static=True)
+
+    assert client.is_connected
+    assert state.values["serial_number"] == "N2GX2318000216"
+
+
+async def test_handshake_gives_up_when_no_board_answers(scooter: FakeScooter) -> None:
+    scooter.handshake_board = DeviceId.MCU  # neither address the client tries
+    with patch_transport(scooter):
+        client = _client()
+        with pytest.raises(NinebotTimeoutError, match="No PRE_COMM response"):
+            await client.connect()
