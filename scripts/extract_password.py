@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import binascii
 import getpass
 from pathlib import Path
 import plistlib
@@ -134,7 +135,7 @@ def find_passwords(data: dict[str, object]) -> list[tuple[str, bytes]]:
         elif isinstance(value, str):
             try:
                 raw = base64.b64decode(value, validate=True)
-            except ValueError, base64.binascii.Error:
+            except ValueError, binascii.Error:
                 raw = None
         if raw and len(raw) == PASSWORD_LENGTH:
             found.append((key, raw))

@@ -48,6 +48,9 @@ jobs:
       - run: uv python install
       - run: uv sync --group dev --frozen
       - run: uv run mypy custom_components/ninebot
+      # Separate pass: the scripts import pynebot directly, so checking
+      # both at once would resolve the same file under two module names.
+      - run: uv run mypy scripts
 
   test:
     name: Tests

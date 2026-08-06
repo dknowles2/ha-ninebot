@@ -93,9 +93,13 @@ show_error_codes = true
 disallow_untyped_defs = true
 follow_imports = "silent"
 
+# The standalone scripts import pynebot directly, without going through the
+# integration package, so mypy needs to see it on its own.
+mypy_path = "custom_components/ninebot"
+
 [[tool.mypy.overrides]]
-# miauth ships no type information.
-module = ["miauth.*"]
+# The backup decryption library ships no type information.
+module = ["iphone_backup_decrypt.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

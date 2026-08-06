@@ -105,9 +105,17 @@ def describe(device: BLEDevice, advertisement: AdvertisementData) -> None:
             print(f"             hardware ID {hardware_id} -> {model}")
 
 
-async def dump(device: BLEDevice, groups: list[str], timeout: float, name: str) -> int:
+async def dump(
+    device: BLEDevice,
+    groups: list[str],
+    timeout: float,
+    name: str,
+    password: bytes | None,
+) -> int:
     """Connect and print every register in the requested groups."""
-    client = NinebotClient(device, request_timeout=timeout, name=name)
+    client = NinebotClient(
+        device, request_timeout=timeout, name=name, password=password
+    )
     print(f"\nConnecting to {name!r} ...")
     print("If this stalls, press the scooter's power button to accept pairing.\n")
 
