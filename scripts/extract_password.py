@@ -18,16 +18,16 @@ Security -> Full Disk Access), otherwise the backup directory is unreadable:
     uv run scripts/extract_password.py --serial N2ABA2415P0216
 
 Encrypted backups work too, and are the better option when a device policy
-requires them. Pass the backup password with --backup-password; the backup
-stays encrypted on disk and only the one file needed is decrypted in memory:
-
-    uv run scripts/extract_password.py --backup-password 'your-backup-password'
+requires them. The script prompts for the backup password when it finds one;
+the backup stays encrypted on disk and only the files needed are decrypted in
+memory.
 """
 
 from __future__ import annotations
 
 import argparse
 import base64
+import getpass
 from pathlib import Path
 import plistlib
 import sqlite3
@@ -230,6 +230,26 @@ def scan_backup(backup: Path, wanted_serial: str | None, passphrase: str | None)
     return hits
 
 
+def prompt_for_passphrase(backups: list[Path]) -> str | None:
+    """Ask for the backup password, but only if an encrypted backup exists.
+
+    Prompted rather than taken as an argument so it stays out of shell history
+    and out of the process table, where any local process could read it.
+    """
+    if not any(is_encrypted(backup) for backup in backups):
+        return None
+
+    print("An encrypted backup was found. Its password is needed to read it.")
+    print("This is the password set in Finder, not your Apple ID password.\n")
+    try:
+        passphrase = getpass.getpass("Backup password: ")
+    except EOFError, KeyboardInterrupt:
+        print()
+        return None
+    print()
+    return passphrase or None
+
+
 def explain_full_disk_access(path: str) -> None:
     """Tell the user how to grant the permission macOS just denied."""
     print(f"Cannot read {path}\n")
@@ -244,11 +264,6 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", help="only report this scooter's password")
     parser.add_argument("--backup", type=Path, help="use a specific backup directory")
-    parser.add_argument(
-        "--backup-password",
-        help="password for an encrypted backup. The backup stays encrypted on "
-        "disk; only the files needed are decrypted.",
-    )
     args = parser.parse_args()
 
     try:
@@ -265,12 +280,14 @@ def main() -> int:
             print("Create one in Finder, with 'Encrypt local backup' unchecked.")
         return 1
 
+    passphrase = prompt_for_passphrase(backups)
+
     print(f"Found {len(backups)} backup(s).\n")
     hits = 0
 
     for backup in backups:
         print(f"=== {backup.name}")
-        hits += scan_backup(backup, args.serial, args.backup_password)
+        hits += scan_backup(backup, args.serial, passphrase)
         print()
 
     if not hits:
