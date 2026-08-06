@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.14.2"
-# dependencies = []
+# dependencies = ["iphone-backup-decrypt>=0.9.0"]
 # ///
 """Recover the Segway-Ninebot session password from a local iPhone backup.
 
@@ -17,9 +17,11 @@ Security -> Full Disk Access), otherwise the backup directory is unreadable:
     uv run scripts/extract_password.py
     uv run scripts/extract_password.py --serial N2ABA2415P0216
 
-The backup must be UNENCRYPTED. In Finder, select the iPhone, choose "Back up
-all of the data on your iPhone to this Mac", and leave "Encrypt local backup"
-unchecked.
+Encrypted backups work too, and are the better option when a device policy
+requires them. Pass the backup password with --backup-password; the backup
+stays encrypted on disk and only the one file needed is decrypted in memory:
+
+    uv run scripts/extract_password.py --backup-password 'your-backup-password'
 """
 
 from __future__ import annotations
@@ -38,6 +40,12 @@ BACKUP_ROOT = Path.home() / "Library/Application Support/MobileSync/Backup"
 
 # The app has shipped under more than one bundle identifier over the years.
 DOMAIN_HINTS = ("ninebot", "segway")
+
+MANIFEST_QUERY = """
+    SELECT fileID, domain, relativePath FROM Files
+    WHERE relativePath LIKE '%.plist'
+      AND (LOWER(domain) LIKE ? OR LOWER(domain) LIKE ?)
+"""
 
 
 class NeedsFullDiskAccessError(Exception):
@@ -76,19 +84,25 @@ def is_encrypted(backup: Path) -> bool:
 
 def find_preference_files(backup: Path) -> list[tuple[str, str]]:
     """Return (fileID, relativePath) for candidate preference plists."""
-    query = """
-        SELECT fileID, domain, relativePath FROM Files
-        WHERE relativePath LIKE '%.plist'
-          AND (LOWER(domain) LIKE ? OR LOWER(domain) LIKE ?)
-    """
     with sqlite3.connect(f"file:{backup / 'Manifest.db'}?mode=ro", uri=True) as db:
-        rows = db.execute(query, [f"%{h}%" for h in DOMAIN_HINTS]).fetchall()
+        rows = db.execute(
+            MANIFEST_QUERY, [f"%{hint}%" for hint in DOMAIN_HINTS]
+        ).fetchall()
     return [(file_id, f"{domain}/{path}") for file_id, domain, path in rows]
 
 
 def stored_path(backup: Path, file_id: str) -> Path:
     """Return where a backed-up file physically lives."""
     return backup / file_id[:2] / file_id
+
+
+def parse_plist(data: bytes) -> dict[str, object]:
+    """Parse plist bytes, in either XML or binary form."""
+    try:
+        loaded = plistlib.loads(data)
+    except plistlib.InvalidFileException:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
 
 
 def read_plist(path: Path) -> dict[str, object]:
@@ -127,12 +141,66 @@ def find_passwords(data: dict[str, object]) -> list[tuple[str, bytes]]:
     return found
 
 
-def scan_backup(backup: Path, wanted_serial: str | None) -> int:
+def report(description: str, serial: str, password: bytes) -> None:
+    """Print one recovered credential."""
+    print(f"    {description}")
+    print(f"      serial:   {serial}")
+    print(f"      password: {password.hex().upper()}")
+
+
+def scan_encrypted_backup(
+    backup: Path, passphrase: str, wanted_serial: str | None
+) -> int:
+    """Report stored passwords in an encrypted backup.
+
+    The backup is left encrypted on disk. Only the manifest and the single
+    preference file are decrypted, and the library's temporary copy of the
+    manifest is removed before returning.
+    """
+    from iphone_backup_decrypt import EncryptedBackup  # noqa: PLC0415
+
+    try:
+        encrypted = EncryptedBackup(backup_directory=backup, passphrase=passphrase)
+        with encrypted.manifest_db_cursor() as cursor:
+            rows = cursor.execute(
+                MANIFEST_QUERY, [f"%{hint}%" for hint in DOMAIN_HINTS]
+            ).fetchall()
+    except Exception as err:
+        print(f"    Could not open the encrypted backup: {err}")
+        print("    A wrong backup password is the usual cause.")
+        return 0
+
+    hits = 0
+    try:
+        for _file_id, domain, relative_path in rows:
+            try:
+                data = encrypted.extract_file_as_bytes(
+                    relative_path=relative_path, domain_like=domain
+                )
+            except Exception:
+                continue
+            for key, password in find_passwords(parse_plist(data)):
+                serial = key.removesuffix("_decrypt")
+                if wanted_serial and serial != wanted_serial:
+                    continue
+                hits += 1
+                report(f"{domain}/{relative_path}", serial, password)
+    finally:
+        encrypted._cleanup()  # noqa: SLF001 - removes the decrypted manifest
+
+    if not hits:
+        print("    App data present, but no stored password for this vehicle.")
+    return hits
+
+
+def scan_backup(backup: Path, wanted_serial: str | None, passphrase: str | None) -> int:
     """Report any stored passwords in one backup. Returns how many were found."""
     if is_encrypted(backup):
-        print("    ENCRYPTED - its manifest cannot be read.")
-        print("    Make an unencrypted backup, or decrypt this one first.")
-        return 0
+        if not passphrase:
+            print("    ENCRYPTED - its manifest cannot be read without the")
+            print("    backup password. Re-run with --backup-password.")
+            return 0
+        return scan_encrypted_backup(backup, passphrase, wanted_serial)
 
     try:
         candidates = find_preference_files(backup)
@@ -176,6 +244,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", help="only report this scooter's password")
     parser.add_argument("--backup", type=Path, help="use a specific backup directory")
+    parser.add_argument(
+        "--backup-password",
+        help="password for an encrypted backup. The backup stays encrypted on "
+        "disk; only the files needed are decrypted.",
+    )
     args = parser.parse_args()
 
     try:
@@ -197,7 +270,7 @@ def main() -> int:
 
     for backup in backups:
         print(f"=== {backup.name}")
-        hits += scan_backup(backup, args.serial)
+        hits += scan_backup(backup, args.serial, args.backup_password)
         print()
 
     if not hits:
