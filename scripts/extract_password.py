@@ -154,8 +154,8 @@ def scan_encrypted_backup(
     """Report stored passwords in an encrypted backup.
 
     The backup is left encrypted on disk. Only the manifest and the single
-    preference file are decrypted, and the library's temporary copy of the
-    manifest is removed before returning.
+    preference file are decrypted, and the temporary decrypted manifest is
+    removed before returning.
     """
     from iphone_backup_decrypt import EncryptedBackup  # noqa: PLC0415
 
@@ -186,7 +186,11 @@ def scan_encrypted_backup(
                 hits += 1
                 report(f"{domain}/{relative_path}", serial, password)
     finally:
-        encrypted._cleanup()  # noqa: SLF001 - removes the decrypted manifest
+        # The library removes its temporary decrypted manifest in __del__.
+        # Dropping the last reference runs that once; calling _cleanup()
+        # ourselves as well makes the second attempt fail noisily on a
+        # directory that is already gone.
+        del encrypted
 
     if not hits:
         print("    App data present, but no stored password for this vehicle.")
