@@ -13,11 +13,11 @@ from typing import Any
 from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_APP_KEY
+from .const import CONF_PASSWORD
 from .coordinator import NinebotConfigEntry
 from .pynebot import REGISTERS_BY_KEY
 
-TO_REDACT = {CONF_APP_KEY, "serial_number", "bms_serial_number", "cpu_id"}
+TO_REDACT = {CONF_PASSWORD, "serial_number", "bms_serial_number", "cpu_id"}
 
 
 async def async_get_config_entry_diagnostics(

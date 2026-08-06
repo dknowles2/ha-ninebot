@@ -17,7 +17,7 @@ from homeassistant.components.bluetooth.active_update_coordinator import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 
-from .const import CONF_APP_KEY, CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL
+from .const import CONF_PASSWORD, CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL
 from .pynebot import (
     DEFAULT_HARDWARE_ID,
     MANUFACTURER_ID,
@@ -89,7 +89,7 @@ class NinebotCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         first_poll = not self.state.values
         if not self.client.is_connected:
             await self.client.connect()
-            self._persist_app_key()
+            self._persist_password()
             first_poll = True
 
         self.state.update(await self.client.async_poll(include_static=first_poll))
@@ -100,15 +100,17 @@ class NinebotCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
                 self.state, self._hardware_id or DEFAULT_HARDWARE_ID
             )
 
-    def _persist_app_key(self) -> None:
-        """Store the pairing key so restarts do not need a button press."""
-        app_key = self.client.app_key.hex()
-        if self.entry.data.get(CONF_APP_KEY) == app_key:
+    def _persist_password(self) -> None:
+        """Store the session password so restarts do not need a button press."""
+        if (password := self.client.password) is None:
+            return
+        encoded = password.hex()
+        if self.entry.data.get(CONF_PASSWORD) == encoded:
             return
         self.hass.config_entries.async_update_entry(
-            self.entry, data={**self.entry.data, CONF_APP_KEY: app_key}
+            self.entry, data={**self.entry.data, CONF_PASSWORD: encoded}
         )
-        _LOGGER.debug("Stored new pairing key for %s", self.entry.title)
+        _LOGGER.debug("Stored a new session password for %s", self.entry.title)
 
     @override
     async def _async_poll(self) -> None:

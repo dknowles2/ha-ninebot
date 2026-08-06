@@ -22,7 +22,7 @@ def test_pack_round_trip() -> None:
 
 
 def test_pack_empty_data() -> None:
-    raw = Packet(DeviceId.HOST, DeviceId.BLE, Command.INIT, 0).pack()
+    raw = Packet(DeviceId.HOST, DeviceId.BLE, Command.PRE_COMM, 0).pack()
 
     assert raw == b"\x5a\xa5\x00\x3d\x21\x5b\x00"
     assert Packet.unpack(raw).data == b""
@@ -71,9 +71,9 @@ def test_response_from_a_different_board_does_not_match() -> None:
 
 
 def test_handshake_responses_ignore_the_index() -> None:
-    """PING and PAIR reuse the index field to carry a status code."""
-    request = Packet(DeviceId.HOST, DeviceId.BLE, Command.PING, 0, b"\x00" * 16)
-    response = Packet(DeviceId.BLE, DeviceId.HOST, Command.PING, 1)
+    """SET_PWD and AUTH reuse the index field to carry a status code."""
+    request = Packet(DeviceId.HOST, DeviceId.BLE, Command.SET_PWD, 0, b"\x00" * 16)
+    response = Packet(DeviceId.BLE, DeviceId.HOST, Command.SET_PWD, 1)
 
     assert response.matches_request(request)
 

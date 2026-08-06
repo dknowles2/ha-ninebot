@@ -1,9 +1,8 @@
-"""An in-memory scooter that speaks Proto2, for tests.
+"""An in-memory scooter that speaks Proto2 with Encryption2, for tests.
 
-The encryption layer is replaced with a stub that preserves frame *lengths*
-(six bytes of trailer) but not confidentiality. That keeps every byte of our
-framing, chunking and reassembly logic under test while leaving the third-party
-cipher out of it.
+The fake runs the real cipher, so the handshake it exercises is the one the
+hardware performs: PRE_COMM in non-SN mode, then counter mode for SET_PWD and
+AUTH, with the key re-derived at each phase.
 """
 
 from __future__ import annotations
@@ -18,7 +17,9 @@ from bleak.backends.device import BLEDevice
 from custom_components.ninebot.pynebot.const import (
     NUS_RX_CHAR_UUID,
     NUS_TX_CHAR_UUID,
+    PASSWORD_LENGTH,
 )
+from custom_components.ninebot.pynebot.crypto import FW_DATA, Encryption2
 from custom_components.ninebot.pynebot.protocol import (
     Command,
     DeviceId,
@@ -26,10 +27,12 @@ from custom_components.ninebot.pynebot.protocol import (
     expected_frame_length,
 )
 
-CRYPTO_TRAILER = b"\x00" * 6
+TRAILER_SIZE = 6
 
-BLE_KEY = bytes(range(16))
-SERIAL_CHALLENGE = b"N2GX2318000216"
+AUTH_PARAM = bytes(16)
+"""Real scooters have been seen returning an all-zero auth parameter."""
+
+SERIAL_CHALLENGE = b"N2ABA2415P0216"
 
 DEFAULT_REGISTERS: dict[tuple[int, int], bytes] = {
     # (board, index): payload
@@ -78,36 +81,6 @@ DEFAULT_REGISTERS: dict[tuple[int, int], bytes] = {
 }
 
 
-class StubCrypto:
-    """Length-preserving stand-in for NbCrypto."""
-
-    def __init__(self) -> None:
-        """Initialize the stub."""
-        self.name = b""
-        self.ble_data: bytes | None = None
-        self.app_data: bytes | None = None
-
-    def set_name(self, name: bytes) -> None:
-        """Record the advertised name."""
-        self.name = name
-
-    def set_ble_data(self, ble_data: bytes) -> None:
-        """Record the key sent by the scooter."""
-        self.ble_data = bytes(ble_data)
-
-    def set_app_data(self, app_data: bytes) -> None:
-        """Record the key chosen by the client."""
-        self.app_data = bytes(app_data)
-
-    def encrypt(self, data: bytearray) -> bytearray:
-        """Append a fixed trailer, matching the real length overhead."""
-        return bytearray(bytes(data) + CRYPTO_TRAILER)
-
-    def decrypt(self, data: bytearray) -> bytearray:
-        """Strip the trailer."""
-        return bytearray(bytes(data)[: -len(CRYPTO_TRAILER)])
-
-
 class FakeCharacteristic:
     """Minimal stand-in for a BleakGATTCharacteristic."""
 
@@ -138,14 +111,14 @@ class FakeScooter:
         self,
         *,
         name: str = "E2 Pro 0216",
-        paired_app_key: bytes | None = None,
+        paired_password: bytes | None = None,
         require_button_press: bool = False,
         chunk_size: int = 20,
         supports_bulk_reads: bool = True,
     ) -> None:
         """Configure the fake scooter's behaviour."""
         self.name = name
-        self.paired_app_key = paired_app_key
+        self.paired_password = paired_password
         self.require_button_press = require_button_press
         self.chunk_size = chunk_size
         self.supports_bulk_reads = supports_bulk_reads
@@ -157,6 +130,9 @@ class FakeScooter:
         self.pair_attempts = 0
         self.requests: list[Packet] = []
         self.connect_count = 0
+
+        self._crypto = Encryption2()
+        self._crypto.set_key(name.encode(), FW_DATA)
 
         self._notify: Callable[[Any, bytearray], None] | None = None
         self._rx_buffer = bytearray()
@@ -193,36 +169,47 @@ class FakeScooter:
 
     def _handle(self, frame: bytes) -> None:
         """Decode a request and emit the matching response."""
-        request = Packet.unpack(frame[: -len(CRYPTO_TRAILER)])
+        request = Packet.unpack(self._crypto.decrypt(frame))
         self.requests.append(request)
 
-        if request.command is Command.INIT:
+        if request.command is Command.PRE_COMM:
+            # The index tells the client whether a password is already stored.
             self._respond(
                 Packet(
-                    DeviceId.BLE,
-                    DeviceId.HOST,
-                    Command.INIT,
-                    0,
-                    BLE_KEY + SERIAL_CHALLENGE,
+                    DeviceId.BLE_BOARD,
+                    DeviceId.PHONE,
+                    Command.PRE_COMM,
+                    int(self.paired_password is not None),
+                    AUTH_PARAM + SERIAL_CHALLENGE,
                 )
             )
+            self._crypto.set_auth(AUTH_PARAM)
+            self._crypto.start_sn()
+            if self.paired_password is not None:
+                self._crypto.set_key(self.paired_password, AUTH_PARAM)
+            else:
+                self._crypto.set_key(self.name.encode(), AUTH_PARAM)
             return
 
-        if request.command is Command.PING:
-            paired = (
-                self.paired_app_key is not None and request.data == self.paired_app_key
-            )
-            self._respond(
-                Packet(DeviceId.BLE, DeviceId.HOST, Command.PING, int(paired))
-            )
-            return
-
-        if request.command is Command.PAIR:
+        if request.command is Command.SET_PWD:
             self.pair_attempts += 1
             if self.require_button_press:
+                self._respond(
+                    Packet(DeviceId.BLE_BOARD, DeviceId.PHONE, Command.SET_PWD, 0)
+                )
                 return
-            self.paired_app_key = self.paired_app_key or b""
-            self._respond(Packet(DeviceId.BLE, DeviceId.HOST, Command.PAIR, 1))
+            self.paired_password = request.data[:PASSWORD_LENGTH]
+            self._respond(
+                Packet(DeviceId.BLE_BOARD, DeviceId.PHONE, Command.SET_PWD, 1)
+            )
+            self._crypto.set_key(self.paired_password, AUTH_PARAM)
+            return
+
+        if request.command is Command.AUTH:
+            accepted = request.data[: len(SERIAL_CHALLENGE)] == SERIAL_CHALLENGE
+            self._respond(
+                Packet(DeviceId.BLE_BOARD, DeviceId.PHONE, Command.AUTH, int(accepted))
+            )
             return
 
         if request.command is Command.READ:
@@ -253,7 +240,7 @@ class FakeScooter:
         self._respond(
             Packet(
                 request.target,
-                DeviceId.HOST,
+                DeviceId.PHONE,
                 Command.READ_ACK,
                 request.index,
                 payload[:wanted],
@@ -263,7 +250,7 @@ class FakeScooter:
     def _respond(self, packet: Packet) -> None:
         """Send a response, split across notification-sized chunks."""
         assert self._notify is not None
-        payload = packet.pack() + CRYPTO_TRAILER
+        payload = self._crypto.encrypt(packet.pack())
         for offset in range(0, len(payload), self.chunk_size):
             self._notify(None, bytearray(payload[offset : offset + self.chunk_size]))
 
@@ -279,15 +266,9 @@ def patch_transport(scooter: FakeScooter) -> Iterator[FakeScooter]:
         scooter.connect_count += 1
         return scooter
 
-    with (
-        patch(
-            "custom_components.ninebot.pynebot.client.establish_connection",
-            _establish_connection,
-        ),
-        patch(
-            "custom_components.ninebot.pynebot.client.NbCrypto",
-            StubCrypto,
-        ),
+    with patch(
+        "custom_components.ninebot.pynebot.client.establish_connection",
+        _establish_connection,
     ):
         yield scooter
 
@@ -298,10 +279,9 @@ def make_ble_device(address: str, name: str) -> Any:
 
 
 __all__ = [
-    "BLE_KEY",
+    "AUTH_PARAM",
     "SERIAL_CHALLENGE",
     "FakeScooter",
-    "StubCrypto",
     "make_ble_device",
     "patch_transport",
 ]

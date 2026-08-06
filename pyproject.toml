@@ -19,8 +19,6 @@ dev = [
   "pytest-cov",
   "mypy",
   "ruff",
-  # Runtime requirement of the integration itself.
-  "miauth==0.9.7",
   # Home Assistant does not install integration requirements during tests, so
   # the bluetooth stack the tests import has to be pulled in explicitly. These
   # mirror the requirements of homeassistant.components.bluetooth and usb.

@@ -7,7 +7,7 @@ from homeassistant.const import CONF_ADDRESS, CONF_NAME, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
-from .const import CONF_APP_KEY, DOMAIN
+from .const import CONF_PASSWORD, DOMAIN
 from .coordinator import NinebotConfigEntry, NinebotCoordinator
 from .pynebot import NinebotClient
 
@@ -25,10 +25,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: NinebotConfigEntry) -> b
             translation_placeholders={"address": address},
         )
 
-    stored_key: str | None = entry.data.get(CONF_APP_KEY)
+    stored: str | None = entry.data.get(CONF_PASSWORD)
     client = NinebotClient(
         ble_device,
-        app_key=bytes.fromhex(stored_key) if stored_key else None,
+        password=bytes.fromhex(stored) if stored else None,
         name=entry.data.get(CONF_NAME) or ble_device.name,
     )
 

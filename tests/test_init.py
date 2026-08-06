@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.ninebot.const import CONF_APP_KEY, DOMAIN
+from custom_components.ninebot.const import CONF_PASSWORD, DOMAIN
 from custom_components.ninebot.pynebot import NinebotClient
 
 from .bluetooth import async_setup_bluetooth, inject_advertisement, make_advertisement
@@ -101,14 +101,14 @@ async def test_poll_populates_state_and_stores_the_pairing_key(
     assert coordinator.info.model == "eKickScooter E2 Pro"
     assert coordinator.info.serial_number == "N2GX2318000216"
     # The key is persisted so a restart does not need a button press.
-    assert entry.data[CONF_APP_KEY] == coordinator.client.app_key.hex()
+    assert entry.data[CONF_PASSWORD] == coordinator.client.password.hex()
 
 
-async def test_stored_pairing_key_is_reused(
+async def test_stored_password_is_reused(
     hass: HomeAssistant, scooter: FakeScooter
 ) -> None:
-    app_key = bytes(range(16))
-    scooter.paired_app_key = app_key
+    password = bytes(range(16))
+    scooter.paired_password = password
     entry = MockConfigEntry(
         domain=DOMAIN,
         unique_id=SCOOTER_ADDRESS,
@@ -116,16 +116,17 @@ async def test_stored_pairing_key_is_reused(
         data={
             CONF_ADDRESS: SCOOTER_ADDRESS,
             CONF_NAME: SCOOTER_NAME,
-            CONF_APP_KEY: app_key.hex(),
+            CONF_PASSWORD: password.hex(),
         },
     )
     entry.add_to_hass(hass)
 
     await _setup(hass, entry, scooter)
 
-    assert entry.runtime_data.client.app_key == app_key
-    # One PAIR closes the handshake; a second would mean we re-paired.
-    assert scooter.pair_attempts == 1
+    assert entry.runtime_data.client.password == password
+    # SET_PWD never runs when the vehicle already recognises us, so the
+    # official app's pairing is left intact.
+    assert scooter.pair_attempts == 0
 
 
 async def test_hardware_id_comes_from_the_advertisement(

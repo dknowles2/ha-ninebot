@@ -9,12 +9,13 @@ from __future__ import annotations
 
 from .client import NinebotClient
 from .const import (
-    APP_KEY_LENGTH,
     DEFAULT_HARDWARE_ID,
     HARDWARE_IDS,
     MANUFACTURER_ID,
     NUS_SERVICE_UUID,
+    PASSWORD_LENGTH,
 )
+from .crypto import Encryption2
 from .exceptions import (
     NinebotAuthError,
     NinebotConnectionError,
@@ -34,17 +35,18 @@ from .registers import (
 )
 
 __all__ = [
-    "APP_KEY_LENGTH",
     "DEFAULT_HARDWARE_ID",
     "DYNAMIC_REGISTERS",
     "HARDWARE_IDS",
     "MANUFACTURER_ID",
     "NUS_SERVICE_UUID",
+    "PASSWORD_LENGTH",
     "REGISTERS",
     "REGISTERS_BY_KEY",
     "STATIC_REGISTERS",
     "Command",
     "DeviceId",
+    "Encryption2",
     "NinebotAuthError",
     "NinebotClient",
     "NinebotConnectionError",

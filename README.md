@@ -3,8 +3,8 @@
 Monitor a Segway-Ninebot kick scooter over Bluetooth LE.
 
 Built for the **Ninebot eKickScooter E2 Pro** (hardware ID 141 / `0x8D`). Other
-scooters speaking the same Proto2 protocol will connect, but their register maps
-differ and most values will be wrong or missing.
+vehicles using Encryption2 with the same `5A A5` framing should connect, but
+their register maps differ and most values will be wrong or missing.
 
 > **Status: unverified against hardware.** The register indices come from
 > community protocol documentation, but the *units* those registers report in do
@@ -54,13 +54,28 @@ directory and restart Home Assistant.
 The scooter is discovered automatically once it advertises. Otherwise add it from
 **Settings → Devices & services → Add integration → Ninebot Scooter**.
 
-**The first connection needs a button press.** When Home Assistant first pairs,
-press the scooter's power button to accept. The pairing key is then stored in the
-config entry and reused, so restarts and reconnects do not ask again.
+### Pairing, and why you probably want to recover a password first
 
-If pairing keeps failing, the scooter has probably forgotten the key (a factory
-reset, or pairing cleared in the Segway-Ninebot app). The integration detects
-this and re-pairs from scratch, which needs one more button press.
+The scooter authenticates a client with a 16-byte session password, and it
+stores **one**. Whoever pairs last owns it.
+
+That matters if you also use the Segway-Ninebot app. If Home Assistant sets its
+own password, the app's stops working; the app then re-pairs and breaks Home
+Assistant's, and you get a button press every time you switch between them.
+
+Recovering the password the app already negotiated avoids this entirely — both
+authenticate as the same client and neither displaces the other:
+
+```bash
+uv run scripts/extract_password.py --serial YOUR_SERIAL
+```
+
+It reads an unencrypted local iPhone backup; see the script's own help for the
+requirements. Pass the result when adding the integration.
+
+Without a recovered password, pairing runs on the first connection and needs a
+press of the scooter's power button. The password is then stored in the config
+entry and reused, so restarts do not ask again — until the app re-pairs.
 
 ## Options
 
@@ -97,9 +112,10 @@ granted Bluetooth permission.
 ```
 custom_components/ninebot/
 ├── pynebot/          # protocol client, no Home Assistant imports
-│   ├── protocol.py   # Proto2 framing (5A A5)
+│   ├── protocol.py   # frame encoding (5A A5)
+│   ├── crypto.py     # Encryption2: AES-128 CTR with CBC-MAC
 │   ├── registers.py  # E2 Pro register map and decoders
-│   ├── client.py     # connect, handshake, poll
+│   ├── client.py     # connect, 3-phase handshake, poll
 │   └── models.py
 ├── coordinator.py    # polls on advertisement, persists the pairing key
 ├── sensor.py
@@ -111,13 +127,22 @@ custom_components/ninebot/
 register scalings will churn its API. Once that settles it moves to its own
 package and the integration depends on it normally.
 
-Encryption is handled by [`miauth`][miauth], a Python port of
-[NinebotCrypto][crypto]. That is the one piece deliberately not reimplemented:
-it is the reference implementation the whole ecosystem uses, and rewriting it
-would only introduce bugs.
+### Encryption
 
-[miauth]: https://github.com/dnandha/miauth
-[crypto]: https://github.com/scooterhacking/NinebotCrypto
+This vehicle speaks **Encryption2**: AES-128 in a custom CTR-like mode with
+CBC-MAC authentication, keyed by `SHA-1(key1 ‖ key2)` where the key pair changes
+at each handshake phase, and with a monotonic counter for replay protection.
+
+It is *not* the legacy NinebotCrypto that `miauth` implements. The two are easy
+to confuse: the device tables describe this model's command framing as Proto2,
+and Encryption2 Gen2 uses that same `5A A5` framing. They also share the initial
+key derivation, so the first handshake frame succeeds either way — and then
+everything afterwards fails silently, because the legacy implementation never
+enters counter mode.
+
+[`crypto.py`](custom_components/ninebot/pynebot/crypto.py) implements it from
+the published specification, using `cryptography`, which Home Assistant already
+ships. There are no third-party protocol dependencies.
 
 ## Development
 
@@ -133,13 +158,14 @@ real framing, so protocol changes are covered without hardware.
 
 ## Credits
 
-Protocol documentation by [NootNooot][docs], crypto by
-[scooterhacking][crypto] and [Daljeet Nandha][miauth], and prior art in
-[ownbee/ninebot-ble][ownbee].
+Protocol and encryption documentation by [NootNooot][docs], without which the
+Encryption2 handshake would not have been implementable. Prior art in
+[ownbee/ninebot-ble][ownbee] and [dnandha/miauth][miauth].
 
 [docs]: https://nootnooot.codeberg.page/segway-ninebot-ble/
 [ownbee]: https://github.com/ownbee/ninebot-ble
+[miauth]: https://github.com/dnandha/miauth
 
 ## License
 
-Apache 2.0. Note that `miauth`, a runtime dependency, is AGPL-3.0.
+Apache 2.0, with no third-party protocol dependencies.

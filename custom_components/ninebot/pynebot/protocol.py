@@ -41,9 +41,12 @@ class Command(enum.IntEnum):
     WRITE_NO_REPLY = 0x03
     READ_ACK = 0x04
     WRITE_ACK = 0x05
-    INIT = 0x5B
-    PING = 0x5C
-    PAIR = 0x5D
+    PRE_COMM = 0x5B
+    """Handshake phase 1: fetch the auth parameter and serial number."""
+    SET_PWD = 0x5C
+    """Handshake phase 2: establish a session password."""
+    AUTH = 0x5D
+    """Handshake phase 3: authenticate with the password and serial."""
 
 
 #: Which command a request expects to see in its response.
@@ -56,6 +59,8 @@ RESPONSE_COMMANDS: dict[Command, Command] = {
 class DeviceId(enum.IntEnum):
     """Board addresses within the vehicle."""
 
+    BLE_BOARD = 0x04
+    """The Bluetooth board, as addressed during the handshake."""
     MCU = 0x20
     """Main controller."""
     BLE = 0x21
@@ -135,9 +140,9 @@ class Packet:
             return False
         if self.command is not RESPONSE_COMMANDS.get(request.command, request.command):
             return False
-        # Handshake commands (INIT/PING/PAIR) reuse the index field to carry
-        # status, so only register traffic is matched on it.
-        if request.command < Command.INIT:
+        # Handshake commands reuse the index field to carry a status code, so
+        # only register traffic is matched on it.
+        if request.command < Command.PRE_COMM:
             return self.index == request.index
         return True
 

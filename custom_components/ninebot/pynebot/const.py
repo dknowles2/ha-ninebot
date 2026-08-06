@@ -25,8 +25,11 @@ HARDWARE_IDS: Final[dict[int, str]] = {
 
 DEFAULT_HARDWARE_ID: Final = 141
 
-# Length of the client-generated application key exchanged during pairing.
-APP_KEY_LENGTH: Final = 16
+# Length of the session password exchanged during pairing.
+PASSWORD_LENGTH: Final = 16
+
+# Length of the vehicle serial number returned by PRE_COMM.
+SERIAL_LENGTH: Final = 14
 
 # Conservative default timeouts, in seconds.
 CONNECT_TIMEOUT: Final = 20.0

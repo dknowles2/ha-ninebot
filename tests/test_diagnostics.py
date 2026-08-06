@@ -5,7 +5,7 @@ from __future__ import annotations
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.ninebot.const import CONF_APP_KEY
+from custom_components.ninebot.const import CONF_PASSWORD
 from custom_components.ninebot.diagnostics import (
     async_get_config_entry_diagnostics,
 )
@@ -40,7 +40,7 @@ async def test_diagnostics_redact_identifiers(
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)
 
-    assert diagnostics["entry"]["data"][CONF_APP_KEY] == "**REDACTED**"
+    assert diagnostics["entry"]["data"][CONF_PASSWORD] == "**REDACTED**"
     assert diagnostics["device"]["serial_number"] == "**REDACTED**"
     assert diagnostics["registers"]["serial_number"] == "**REDACTED**"
 

@@ -15,11 +15,11 @@ from .conftest import SCOOTER_ADDRESS, SCOOTER_NAME
 from .fake_scooter import FakeScooter, make_ble_device, patch_transport
 
 
-def _client(app_key: bytes | None = None) -> NinebotClient:
+def _client(password: bytes | None = None) -> NinebotClient:
     """Return a client with timeouts short enough to keep tests quick."""
     return NinebotClient(
         make_ble_device(SCOOTER_ADDRESS, SCOOTER_NAME),
-        app_key=app_key,
+        password=password,
         request_timeout=0.05,
         pairing_timeout=0.2,
     )
@@ -32,9 +32,9 @@ async def test_connect_pairs_and_reads(transport: FakeScooter) -> None:
 
     assert client.is_connected
     commands = [request.command for request in transport.requests]
-    assert Command.INIT in commands
-    assert Command.PING in commands
-    assert Command.PAIR in commands
+    assert Command.PRE_COMM in commands
+    assert Command.SET_PWD in commands
+    assert Command.AUTH in commands
 
 
 async def test_poll_decodes_every_register(transport: FakeScooter) -> None:
@@ -106,15 +106,16 @@ async def test_bulk_read_falls_back_to_walking_the_index(
     assert state.values["total_distance"] == 20.0
 
 
-async def test_stored_key_skips_pairing(scooter: FakeScooter) -> None:
-    app_key = bytes(range(16))
-    scooter.paired_app_key = app_key
+async def test_stored_password_skips_pairing(scooter: FakeScooter) -> None:
+    password = bytes(range(16))
+    scooter.paired_password = password
     with patch_transport(scooter):
-        client = _client(app_key=app_key)
+        client = _client(password=password)
         await client.connect()
 
-    assert client.app_key == app_key
-    assert scooter.pair_attempts == 1  # the closing handshake PAIR only
+    assert client.password == password
+    # SET_PWD is skipped entirely when the vehicle already knows us.
+    assert scooter.pair_attempts == 0
 
 
 async def test_button_press_timeout_raises(scooter: FakeScooter) -> None:

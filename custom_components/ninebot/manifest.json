@@ -7,14 +7,20 @@
       "manufacturer_id": 16974
     }
   ],
-  "codeowners": ["@dknowles2"],
+  "codeowners": [
+    "@dknowles2"
+  ],
   "config_flow": true,
-  "dependencies": ["bluetooth_adapters"],
+  "dependencies": [
+    "bluetooth_adapters"
+  ],
   "documentation": "https://github.com/dknowles2/ha-ninebot",
   "integration_type": "device",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/dknowles2/ha-ninebot/issues",
-  "loggers": ["custom_components.ninebot"],
-  "requirements": ["miauth==0.9.7"],
+  "loggers": [
+    "custom_components.ninebot"
+  ],
+  "requirements": [],
   "version": "0.1.0"
 }

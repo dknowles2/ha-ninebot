@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.14.2"
 # dependencies = ["bleak", "bleak-retry-connector", "miauth==0.9.7"]
 # ///
 """Read a Ninebot scooter's registers without Home Assistant.
@@ -42,6 +42,7 @@ sys.path.insert(
 from pynebot import (
     HARDWARE_IDS,
     MANUFACTURER_ID,
+    PASSWORD_LENGTH,
     REGISTERS,
     NinebotClient,
     NinebotError,
@@ -104,10 +105,10 @@ def describe(device: BLEDevice, advertisement: AdvertisementData) -> None:
             print(f"             hardware ID {hardware_id} -> {model}")
 
 
-async def dump(device: BLEDevice, groups: list[str], timeout: float) -> int:
+async def dump(device: BLEDevice, groups: list[str], timeout: float, name: str) -> int:
     """Connect and print every register in the requested groups."""
-    client = NinebotClient(device, request_timeout=timeout)
-    print(f"\nConnecting to {str(device.name)!r} ...")
+    client = NinebotClient(device, request_timeout=timeout, name=name)
+    print(f"\nConnecting to {name!r} ...")
     print("If this stalls, press the scooter's power button to accept pairing.\n")
 
     try:
@@ -116,7 +117,9 @@ async def dump(device: BLEDevice, groups: list[str], timeout: float) -> int:
         print(f"\nConnection failed: {type(err).__name__}: {err}")
         return 1
 
-    print(f"Handshake OK. Pairing key: {client.app_key.hex()}\n")
+    if client.password is not None:
+        print(f"Authenticated. Session password: {client.password.hex().upper()}")
+        print("Save it: passing it back with --password avoids re-pairing.\n")
     try:
         state = await client.async_poll(include_static=True)
     except NinebotError as err:
@@ -153,6 +156,17 @@ async def main() -> int:
     )
     parser.add_argument("--timeout", type=float, default=4.0, help="per-register wait")
     parser.add_argument("--scan-time", type=float, default=20.0, help="scan duration")
+    parser.add_argument(
+        "--password",
+        help="hex session password recovered from the official app "
+        "(see scripts/extract_password.py). Without it, pairing runs and "
+        "displaces whatever the app had stored.",
+    )
+    parser.add_argument(
+        "--name",
+        help="override the name used to derive the handshake key "
+        "(defaults to the advertised local name)",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -174,7 +188,15 @@ async def main() -> int:
             " A sustained connection will likely be flaky."
         )
 
-    return await dump(device, args.group or list(GROUPS), args.timeout)
+    name = args.name or str(advertisement.local_name or device.name or "Unnamed")
+    print(f"\nBLEDevice.name={device.name!r}  local_name={advertisement.local_name!r}")
+    print(f"Handshake key will be derived from: {name!r}")
+    password = bytes.fromhex(args.password) if args.password else None
+    if password is not None and len(password) != PASSWORD_LENGTH:
+        print(f"Password must be {PASSWORD_LENGTH} bytes, got {len(password)}")
+        return 1
+
+    return await dump(device, args.group or list(GROUPS), args.timeout, name, password)
 
 
 if __name__ == "__main__":

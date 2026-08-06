@@ -69,6 +69,5 @@ async def test_reconnect_is_skipped_while_the_link_is_up(
     await _setup(hass, entry, scooter)
 
     assert scooter.connect_count == 1
-    # A first-time pairing sends PAIR twice: once to ask, once to close the
-    # handshake. A second connect would double that.
-    assert scooter.pair_attempts == 2
+    # A first-time pairing runs SET_PWD once. A second connect would repeat it.
+    assert scooter.pair_attempts == 1

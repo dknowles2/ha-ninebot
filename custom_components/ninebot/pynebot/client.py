@@ -13,15 +13,16 @@ from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
 from bleak_retry_connector import establish_connection
-from miauth.nb.nbcrypto import NbCrypto
 
 from .const import (
-    APP_KEY_LENGTH,
     NUS_RX_CHAR_UUID,
     NUS_TX_CHAR_UUID,
     PAIRING_TIMEOUT,
+    PASSWORD_LENGTH,
     REQUEST_TIMEOUT,
+    SERIAL_LENGTH,
 )
+from .crypto import FW_DATA, Encryption2
 from .exceptions import (
     NinebotAuthError,
     NinebotConnectionError,
@@ -70,7 +71,7 @@ class NinebotClient:
         self,
         device: BLEDevice,
         *,
-        app_key: bytes | None = None,
+        password: bytes | None = None,
         name: str | None = None,
         request_timeout: float = REQUEST_TIMEOUT,
         pairing_timeout: float = PAIRING_TIMEOUT,
@@ -79,9 +80,12 @@ class NinebotClient:
 
         Args:
             device: The scooter, as discovered by bleak or Home Assistant.
-            app_key: A previously negotiated application key. Reusing the key
-                from an earlier pairing avoids asking the user to press the
-                power button again. A fresh key is generated when omitted.
+            password: The 16-byte session password already agreed with the
+                vehicle. Supplying the one the official app negotiated lets
+                this client authenticate as that same paired client, so
+                neither displaces the other. Without it a new password is
+                established, which needs a power-button press and invalidates
+                whatever the app had stored.
             name: Overrides the advertised name used to derive the initial
                 handshake key. Defaults to the device's advertised name.
             request_timeout: How long to wait for a response to one request.
@@ -89,24 +93,25 @@ class NinebotClient:
                 scooter's power button.
         """
         self._device = device
-        self._name = name or device.name or "Unnamed"
+        self._name = str(name or device.name or "Unnamed")
         self._request_timeout = request_timeout
         self._pairing_timeout = pairing_timeout
-        self._app_key = app_key or secrets.token_bytes(APP_KEY_LENGTH)
-        self._app_key_was_supplied = app_key is not None
+        self._password = password
+        self._password_was_supplied = password is not None
+        self._auth_param = bytes(PASSWORD_LENGTH)
+        self._serial = b""
 
-        self._crypto = NbCrypto()
+        self._crypto = Encryption2()
         self._client: BleakClient | None = None
         self._responses: asyncio.Queue[Packet] = asyncio.Queue(maxsize=64)
         self._buffer = bytearray()
         self._chunk_size = DEFAULT_CHUNK_SIZE
-        self._serial_challenge = b""
         self._lock = asyncio.Lock()
 
     @property
-    def app_key(self) -> bytes:
-        """Return the application key in use. Persist this between sessions."""
-        return self._app_key
+    def password(self) -> bytes | None:
+        """Return the session password in use. Persist this between sessions."""
+        return self._password
 
     @property
     def address(self) -> str:
@@ -153,29 +158,30 @@ class NinebotClient:
         try:
             await self._handshake()
         except NinebotAuthError:
-            # A stored key the scooter has since forgotten (factory reset, or
-            # pairing cleared in the app) leaves us with a session key that
-            # encrypts but does not decrypt. Discard it and pair from scratch.
-            if not self._app_key_was_supplied:
+            # A password the vehicle no longer recognises cannot be recovered
+            # mid-session: the cipher's keys and counters are already dirty.
+            # Drop it, reconnect, and negotiate a fresh one.
+            if not self._password_was_supplied:
                 raise
             _LOGGER.info(
-                "%s: stored pairing key rejected, re-pairing from scratch", self._name
+                "%s: stored password rejected, negotiating a new one", self._name
             )
-            self._app_key = secrets.token_bytes(APP_KEY_LENGTH)
-            self._app_key_was_supplied = False
+            self._password = None
+            self._password_was_supplied = False
             await self.disconnect()
             await self._connect_transport()
             await self._handshake()
 
     async def _connect_transport(self) -> None:
         """Open the BLE link and subscribe to notifications."""
-        self._crypto = NbCrypto()
-        self._crypto.set_name(self._name.encode())
+        self._crypto = Encryption2()
         self._buffer.clear()
         while not self._responses.empty():
             self._responses.get_nowait()
 
-        _LOGGER.debug("%s: connecting to %s", self._name, self._device.address)
+        # The initial handshake key is derived from this name, so a wrong
+        # one produces a scooter that connects and then never answers.
+        _LOGGER.debug("Connecting to %s as %r", self._device.address, self._name)
         try:
             self._client = await establish_connection(
                 BleakClient, self._device, self._name
@@ -194,61 +200,109 @@ class NinebotClient:
         self._chunk_size = rx_char.max_write_without_response_size or DEFAULT_CHUNK_SIZE
 
     async def _handshake(self) -> None:
-        """Run the INIT/PING/PAIR sequence and derive the session key."""
-        init = await self._request(Packet(DeviceId.HOST, DeviceId.BLE, Command.INIT, 0))
-        if len(init.data) < APP_KEY_LENGTH:
-            raise NinebotAuthError(f"INIT response too short: {len(init.data)} bytes")
-        ble_key = init.data[:APP_KEY_LENGTH]
-        self._serial_challenge = init.data[APP_KEY_LENGTH:]
-        self._crypto.set_ble_data(ble_key)
+        """Run PRE_COMM, then either AUTH directly or SET_PWD followed by AUTH.
 
-        ping = await self._request(
-            Packet(DeviceId.HOST, DeviceId.BLE, Command.PING, 0, self._app_key)
-        )
-        if ping.index == 0:
-            await self._await_pairing()
+        Raises:
+            NinebotAuthError: the vehicle rejected the password.
+            NinebotPairingRequiredError: the user must press the power button.
+        """
+        await self._pre_comm()
 
-        # Switch to the session key derived from the application key. The
-        # scooter does this on its side the moment pairing is accepted, so it
-        # must happen on both the freshly-paired and already-paired paths.
-        self._crypto.set_app_data(self._app_key)
+        if self._password is not None:
+            await self._authenticate()
+        else:
+            await self._set_password()
+            await self._authenticate()
 
-        await self._request(
-            Packet(
-                DeviceId.HOST,
-                DeviceId.BLE,
-                Command.PAIR,
-                0,
-                self._serial_challenge,
-            )
-        )
         await self._verify_session()
 
-    async def _await_pairing(self) -> None:
-        """Re-send pairing requests until the user accepts, or time out."""
+    async def _pre_comm(self) -> None:
+        """Fetch the auth parameter and serial number, then enter counter mode."""
+        self._crypto.reset_sn()
+        self._crypto.set_key(self._name.encode(), FW_DATA)
+
+        response = await self._request(
+            Packet(DeviceId.PHONE, DeviceId.BLE_BOARD, Command.PRE_COMM, 0)
+        )
+        if len(response.data) < PASSWORD_LENGTH + SERIAL_LENGTH:
+            raise NinebotAuthError(
+                f"PRE_COMM response too short: {len(response.data)} bytes"
+            )
+
+        self._auth_param = response.data[:PASSWORD_LENGTH]
+        self._serial = response.data[PASSWORD_LENGTH : PASSWORD_LENGTH + SERIAL_LENGTH]
+        has_stored_password = response.index != 0
+        _LOGGER.debug(
+            "%s: PRE_COMM auth=%s serial=%r stored_password=%s",
+            self._name,
+            self._auth_param.hex().upper(),
+            self._serial.decode("ascii", errors="replace"),
+            has_stored_password,
+        )
+
+        if self._password is not None and not has_stored_password:
+            # The vehicle forgot the pairing, so the password we hold is stale
+            # and SET_PWD has to run regardless of what the caller supplied.
+            _LOGGER.info("%s: vehicle has no stored password, re-pairing", self._name)
+            self._password = None
+
+        self._crypto.set_auth(self._auth_param)
+        # Everything from here is counter mode. The first frame carries counter
+        # 2, whether or not SET_PWD is about to run.
+        self._crypto.start_sn()
+
+    async def _set_password(self) -> None:
+        """Establish a new session password, waiting for the user to confirm.
+
+        This displaces whatever password the official app had stored, so the
+        app will need one button press of its own to pair again.
+        """
+        password = secrets.token_bytes(PASSWORD_LENGTH)
+        self._crypto.set_key(self._name.encode(), self._auth_param)
+
         _LOGGER.info("%s: press the scooter's power button to pair", self._name)
         deadline = asyncio.get_running_loop().time() + self._pairing_timeout
         while asyncio.get_running_loop().time() < deadline:
-            await self._send(
-                Packet(
-                    DeviceId.HOST,
-                    DeviceId.BLE,
-                    Command.PAIR,
-                    0,
-                    self._serial_challenge,
-                )
-            )
             try:
-                response = await self._receive(timeout=PAIRING_RETRY_INTERVAL)
+                response = await self._request(
+                    Packet(
+                        DeviceId.PHONE,
+                        DeviceId.BLE_BOARD,
+                        Command.SET_PWD,
+                        0,
+                        password,
+                    ),
+                    timeout=PAIRING_RETRY_INTERVAL,
+                )
             except NinebotTimeoutError:
                 continue
-            if response.command in (Command.PING, Command.PAIR) and response.index == 1:
-                _LOGGER.debug("%s: pairing accepted", self._name)
+            if response.index != 0:
+                _LOGGER.debug("%s: password accepted", self._name)
+                self._password = password
                 return
+
         raise NinebotPairingRequiredError(
-            "Scooter did not accept pairing. Press its power button while"
-            " Home Assistant is connecting, then try again."
+            "Scooter did not accept a new password. Press its power button"
+            " while Home Assistant is connecting, then try again."
         )
+
+    async def _authenticate(self) -> None:
+        """Authenticate with the session password and the vehicle's serial."""
+        assert self._password is not None
+        self._crypto.set_key(self._password, self._auth_param)
+
+        response = await self._request(
+            Packet(
+                DeviceId.PHONE,
+                DeviceId.BLE_BOARD,
+                Command.AUTH,
+                0,
+                self._serial,
+            )
+        )
+        if response.index == 0:
+            raise NinebotAuthError("Vehicle rejected the session password")
+        _LOGGER.debug("%s: authenticated", self._name)
 
     async def _verify_session(self) -> None:
         """Read a known-good register to confirm the session key works."""
@@ -350,7 +404,7 @@ class NinebotClient:
         try:
             response = await self._request(
                 Packet(
-                    DeviceId.HOST,
+                    DeviceId.PHONE,
                     register.board,
                     Command.READ,
                     register.index,
@@ -374,7 +428,7 @@ class NinebotClient:
         for word in range((register.length + 1) // 2):
             response = await self._request(
                 Packet(
-                    DeviceId.HOST,
+                    DeviceId.PHONE,
                     register.board,
                     Command.READ,
                     register.index + word,
@@ -405,7 +459,7 @@ class NinebotClient:
             raise NinebotConnectionError("Not connected")
 
         _LOGGER.debug("%s: >>> %s", self._name, packet)
-        payload = bytes(self._crypto.encrypt(bytearray(packet.pack())))
+        payload = self._crypto.encrypt(packet.pack())
         try:
             for offset in range(0, len(payload), self._chunk_size):
                 await self._client.write_gatt_char(
@@ -429,6 +483,7 @@ class NinebotClient:
         frame is only handed to the decryption layer once every byte of it has
         arrived; decrypting a partial frame corrupts the cipher's counter.
         """
+        _LOGGER.debug("%s: raw notification %s", self._name, data.hex().upper())
         self._buffer.extend(data)
         while True:
             start = self._buffer.find(b"\x5a\xa5")
@@ -451,11 +506,23 @@ class NinebotClient:
 
     def _dispatch(self, frame: bytes) -> None:
         """Decrypt one complete frame and queue the packet it contains."""
+        plaintext = b""
         try:
-            plaintext = bytes(self._crypto.decrypt(bytearray(frame)))
+            plaintext = self._crypto.decrypt(frame)
             packet = Packet.unpack(plaintext)
         except NinebotProtocolError as err:
-            _LOGGER.debug("%s: dropping malformed frame: %s", self._name, err)
+            # Both halves are logged because a frame that decrypts to nonsense
+            # and one that decrypts fine but carries an unexpected field look
+            # identical from the exception alone.
+            _LOGGER.debug(
+                "%s: dropping malformed frame: %s\n"
+                "        ciphertext: %s\n"
+                "        plaintext:  %s",
+                self._name,
+                err,
+                frame.hex().upper(),
+                plaintext.hex().upper(),
+            )
             return
         except Exception as err:
             _LOGGER.debug("%s: could not decrypt frame: %s", self._name, err)

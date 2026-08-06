@@ -980,7 +980,6 @@ dev = [
     { name = "bluetooth-data-tools" },
     { name = "dbus-fast" },
     { name = "habluetooth" },
-    { name = "miauth" },
     { name = "mypy" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -1001,7 +1000,6 @@ dev = [
     { name = "bluetooth-data-tools", specifier = "==1.29.21" },
     { name = "dbus-fast", specifier = "==5.0.22" },
     { name = "habluetooth", specifier = "==6.26.5" },
-    { name = "miauth", specifier = "==0.9.7" },
     { name = "mypy" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -1366,15 +1364,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/d1/e3/a06dcd2e6df094c5e
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9b/1c/92fd926c2e7763535454683250dbdd8d10aa2f2c62f58d6abbcce4d8b3fc/mashumaro-3.22-py3-none-any.whl", hash = "sha256:17dc4d7294c33ef380a8b929dda0608577aa2141988c00a0c4932310108fe71d", size = 95916, upload-time = "2026-05-26T14:39:20.233Z" },
 ]
-
-[[package]]
-name = "miauth"
-version = "0.9.7"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "cryptography" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/df/5c/fc84f087ef841b01c184ab269c77a45f7799e99203405d9f3658f76b5ee9/miauth-0.9.7.tar.gz", hash = "sha256:dbfe271489e9758f1f6ff6feb178604fa64fb4480157e2873322e7c48a7acbf5", size = 27000, upload-time = "2022-12-18T16:21:01.819Z" }
 
 [[package]]
 name = "mock-open"
