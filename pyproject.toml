@@ -14,7 +14,7 @@ package = false
 
 [dependency-groups]
 dev = [
-  "pytest-homeassistant-custom-component==0.13.353",
+  "pytest-homeassistant-custom-component==0.13.356",
   "pytest-asyncio",
   "pytest-cov",
   "mypy",
