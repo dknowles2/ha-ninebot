@@ -31,7 +31,7 @@ dev = [
   "bluetooth-auto-recovery==1.6.4",
   "bluetooth-data-tools==1.29.21",
   "dbus-fast==5.0.22",
-  "habluetooth==6.26.5",
+  "habluetooth==6.26.7",
   "serialx==1.8.2",
 ]
 
